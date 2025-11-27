@@ -6,7 +6,7 @@ const PORT = process.env.PORT || 8080;
 const http = require("http");
 const express = require("express");
 const WebSocket = require("ws");
-const tlc = require("tiktok-live-connector");
+import WebcastPushConnection from "https://esm.sh/tiktok-live-connector";
 const WebcastPushConnection = tlc.WebcastPushConnection;
 const SignConfig = tlc.SignConfig;
 
