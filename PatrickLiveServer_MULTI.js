@@ -20,14 +20,12 @@ if (SignConfig && API_KEY) {
 }
 
 // =============================
-//  🌐 WEBSOCKET SERVER UNIVERSAL
+//  🌐 WEBSOCKET SERVER
 // =============================
 const wss = new WebSocketServer({ server, path: "/tap" });
 
-wss.on("connection", (ws, request) => {
-    console.log("🟢 Novo overlay conectado.");
-
-    ws.on("close", () => console.log("🔴 Overlay desconectado."));
+wss.on("connection", (ws) => {
+    console.log("🟢 Overlay conectado via WS");
 });
 
 // Envia evento para TODOS overlays conectados
@@ -44,101 +42,110 @@ function broadcast(event) {
 //  📡 CONECTAR NO TIKTOK
 // =============================
 USERS.forEach(username => {
+
     console.log("🔄 Conectando em @" + username);
 
     const tiktok = new WebcastPushConnection(username);
 
-    tiktok.connect().then(() => {
-        console.log("🟢 Conectado ao TikTok @" + username);
-    }).catch(err => {
-        console.log("❌ Erro ao conectar @" + username, err);
-    });
+    tiktok.connect()
+        .then(() => console.log("🟢 Conectado @" + username))
+        .catch(err => console.log("❌ Erro @" + username, err));
 
-    // TAP (likes)
+    // TAP (Like) — COM FOTO REAL
     tiktok.on("like", data => {
         broadcast({
             type: "tap",
             user: data.uniqueId,
             nickname: data.nickname,
-            likes: data.likeCount
+            likes: data.likeCount,
+            pfp: data.profilePictureUrl    // 🔥 FOTO REAL
         });
     });
 
-    // FOLLOW (seguidores)
+    // FOLLOW — COM FOTO REAL
     tiktok.on("follow", data => {
         broadcast({
             type: "follow",
             user: data.uniqueId,
-            nickname: data.nickname
+            nickname: data.nickname,
+            pfp: data.profilePictureUrl
         });
     });
 
-    // GIFT
+    // GIFT — COM FOTO REAL
     tiktok.on("gift", data => {
         broadcast({
             type: "gift",
             user: data.uniqueId,
             nickname: data.nickname,
             giftName: data.giftName,
-            repeatEnd: data.repeatEnd
+            repeatEnd: data.repeatEnd,
+            pfp: data.profilePictureUrl
         });
     });
 
-    // JOIN (entrar na live)
+    // JOIN (Member Enter)
     tiktok.on("member", data => {
         broadcast({
             type: "join",
             user: data.uniqueId,
-            nickname: data.nickname
+            nickname: data.nickname,
+            pfp: data.profilePictureUrl
         });
     });
 });
 
 // =============================
-//  🧪 SIMULADORES SEM LIVE
+//  🧪 SIMULADORES (AGORA COM FOTO REAL)
 // =============================
 
-// TAP
+const TEST_PFP = "https://i.imgur.com/0Z8FQmT.png"; // foto genérica
+
+// 🔥 TAP
 app.get("/test-tap", (req, res) => {
     broadcast({
         type: "tap",
-        user: "testeUser",
+        user: "testerID",
         nickname: "TapTester",
-        likes: 1
+        likes: 1,
+        pfp: TEST_PFP
     });
-    res.send("✔ TAP enviado ao overlay!");
+    res.send("✔ TAP DE TESTE (com foto) enviado!");
 });
 
-// FOLLOW
+// 🔥 FOLLOW
 app.get("/test-follow", (req, res) => {
     broadcast({
         type: "follow",
-        user: "testeUser",
-        nickname: "FollowTester"
+        user: "testerID",
+        nickname: "FollowTester",
+        pfp: TEST_PFP
     });
-    res.send("✔ FOLLOW enviado ao overlay!");
+    res.send("✔ FOLLOW DE TESTE enviado!");
 });
 
-// GIFT
+// 🔥 GIFT
 app.get("/test-gift", (req, res) => {
     broadcast({
         type: "gift",
-        user: "testeUser",
+        user: "testerID",
         nickname: "GiftTester",
         giftName: "🎁 Presente de Teste",
-        repeatEnd: true
+        repeatEnd: true,
+        pfp: TEST_PFP
     });
-    res.send("✔ GIFT enviado ao overlay!");
+    res.send("✔ GIFT DE TESTE enviado!");
 });
 
-// JOIN
+// 🔥 JOIN
 app.get("/test-join", (req, res) => {
     broadcast({
         type: "join",
-        user: "testeUser",
-        nickname: "JoinTester"
+        user: "testerID",
+        nickname: "JoinTester",
+        pfp: TEST_PFP
     });
-    res.send("✔ JOIN enviado ao overlay!");
+    res.send("✔ JOIN DE TESTE enviado!");
 });
 
 // =============================
