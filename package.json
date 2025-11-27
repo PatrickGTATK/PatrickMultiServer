@@ -10,6 +10,7 @@
     "dotenv": "^16.3.1",
     "express": "^4.19.2",
     "ws": "^8.17.0",
-    "tiktok-live-connector": "github:zerodytrash/TikTok-Live-Connector"
+    "tiktok-live-connector": "npm:@zerodytrash/tiktok-live-connector"
   }
 }
+
