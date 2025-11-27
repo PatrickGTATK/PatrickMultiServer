@@ -2,7 +2,6 @@
   "name": "patrick-multi-server",
   "version": "1.0.0",
   "main": "PatrickLiveServer_MULTI.js",
-  "type": "module",
   "scripts": {
     "start": "node PatrickLiveServer_MULTI.js"
   },
@@ -12,4 +11,3 @@
     "ws": "^8.17.0"
   }
 }
-
