@@ -1,20 +1,17 @@
-"use strict";
+import "dotenv/config";
+import http from "http";
+import express from "express";
+import WebSocket, { WebSocketServer } from "ws";
 
-require("dotenv").config();
+// IMPORTAÇÃO REMOTA — SEM NPM, SEM ERRO, MENOS COISA POSSÍVEL
+import WebcastPushConnection, { SignConfig } from "https://esm.sh/tiktok-live-connector@1.5.0";
+
 const PORT = process.env.PORT || 8080;
-
-const http = require("http");
-const express = require("express");
-const WebSocket = require("ws");
-import WebcastPushConnection from "https://esm.sh/tiktok-live-connector";
-const WebcastPushConnection = tlc.WebcastPushConnection;
-const SignConfig = tlc.SignConfig;
 
 // ======================================================
 // 🧠 ARQUITETURA MULTI-USER
-// Cada usuário = sua própria conexão com o TikTok
 // ======================================================
-const userSessions = new Map();      // { username → { tiktok, overlaysTap, overlaysRocket } }
+const userSessions = new Map();      
 const API_KEYS = (process.env.TIKTOK_API_KEYS || "").split(",").map(s => s.trim());
 let apiKeyIndex = 0;
 
@@ -45,7 +42,7 @@ app.get("/debug", (req, res) => {
 // ======================================================
 // WebSocket Server
 // ======================================================
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocketServer({ server });
 
 function heartbeat(ws) { ws.isAlive = true; }
 
@@ -56,7 +53,6 @@ setInterval(() => {
         ws.ping();
     });
 }, 10000);
-
 
 // ======================================================
 // 🔥 SESSÃO POR USUÁRIO
@@ -85,7 +81,6 @@ function createUserSession(username) {
     return session;
 }
 
-
 // ======================================================
 // LOGICA DE FILA
 // ======================================================
@@ -96,15 +91,15 @@ function enqueue(session, fn) {
 
 function processQueue(session) {
     if (session.processing) return;
-
     session.processing = true;
+
     while (session.queue.length > 0) {
         const fn = session.queue.shift();
         try { fn(); } catch (err) { console.log("ERRO FILA:", err); }
     }
+
     session.processing = false;
 }
-
 
 // ======================================================
 // TIKTOK POR USER
@@ -112,7 +107,6 @@ function processQueue(session) {
 function startTikTokSession(session) {
     const { username } = session;
 
-    // Limpa conexão antiga
     if (session.tiktok) {
         session.tiktok.removeAllListeners();
         session.tiktok.disconnect();
@@ -140,7 +134,6 @@ function startTikTokSession(session) {
         session.fallbackMode = false;
         session.lastEventTime = Date.now();
 
-        // LIKE → TAP
         tiktok.on("like", data => {
             session.lastEventTime = Date.now();
             enqueue(session, () => {
@@ -153,7 +146,6 @@ function startTikTokSession(session) {
             });
         });
 
-        // GIFT
         tiktok.on("gift", data => {
             session.lastEventTime = Date.now();
             enqueue(session, () => {
@@ -168,7 +160,7 @@ function startTikTokSession(session) {
             });
         });
 
-        tiktok.on("chat", data => {
+        tiktok.on("chat", () => {
             session.lastEventTime = Date.now();
         });
 
@@ -179,7 +171,7 @@ function startTikTokSession(session) {
 
         tiktok.on("error", err => {
             console.log(`❌ [${username}] ERRO: ${err.message}`);
-            session.fallbackMode = !session.fallbackMode; // alterna modo
+            session.fallbackMode = !session.fallbackMode;
             triggerReconnect(session);
         });
 
@@ -202,7 +194,6 @@ function triggerReconnect(session) {
         startTikTokSession(session);
     }, session.retryDelay);
 }
-
 
 // ======================================================
 // WEBSOCKET CONNECTION HANDLER
@@ -231,7 +222,6 @@ wss.on("connection", (ws, req) => {
         ws.on("close", () => session.rocketConnections.delete(ws));
     }
 });
-
 
 // ======================================================
 // START SERVER
