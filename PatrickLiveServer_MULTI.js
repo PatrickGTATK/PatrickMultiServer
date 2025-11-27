@@ -1,123 +1,58 @@
 import "dotenv/config";
-import http from "http";
 import express from "express";
+import http from "http";
 import WebSocket, { WebSocketServer } from "ws";
 import WebcastPushConnection, { SignConfig } from "./tiktok-live-connector/index.js";
 
-// ==============================
-// CONFIG
-// ==============================
-const PORT = process.env.PORT || 8080;
-const TIKTOK_USERS = process.env.USERS?.split(",") || [];
-const API_KEY = process.env.API_KEY || "";
+// ===================== CONFIG ======================
+const USER = process.env.USERS;   // vindo do Render
+const API_KEY = process.env.API_KEY;
+
+const PORT = process.env.PORT || 10000;
+
+SignConfig.apiKey = API_KEY;
+
+// ===================== SERVIDOR HTTP ======================
 const app = express();
 const server = http.createServer(app);
 
-// ==============================
-// WEBSOCKET SERVERS
-// ==============================
-const wssGift = new WebSocketServer({ noServer: true });
-const wssTap = new WebSocketServer({ noServer: true });
-
-// Envia mensagem a todos conectados
-function broadcast(wss, data) {
-    const msg = JSON.stringify(data);
-    wss.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(msg);
-        }
-    });
-}
-
-// ==============================
-// EXPRESS ROUTES
-// ==============================
 app.get("/", (req, res) => {
-    res.send("Patrick Multi Server ONLINE ✔");
+  res.send("Servidor online");
 });
 
-// ==============================
-// CONEXÃO COM TIKTOK
-// ==============================
-async function iniciarConexoes() {
-    console.log("🔵 Iniciando conexões TikTok...");
+// ===================== WEBSOCKET ======================
+const wss = new WebSocketServer({ server, path: "/tap" });
 
-    for (const user of TIKTOK_USERS) {
-        try {
-            console.log(`🎥 Conectando em @${user} ...`);
+wss.on("connection", (ws) => {
+  console.log("🔵 Overlay conectado via WS");
 
-            const tiktok = new WebcastPushConnection(user.trim());
-
-            // Aplica chave Euler se existir
-            if (API_KEY) {
-                SignConfig.apiKey = API_KEY;
-            }
-
-            await tiktok.connect();
-
-            console.log(`🟢 Connected @${user}`);
-
-            // Gifts
-            tiktok.on("gift", (data) => {
-                broadcast(wssGift, {
-                    type: "gift",
-                    user,
-                    data,
-                });
-            });
-
-            // Likes / Taps
-            tiktok.on("like", (data) => {
-                broadcast(wssTap, {
-                    type: "tap",
-                    user,
-                    data,
-                });
-            });
-
-            // Debug
-            tiktok.on("streamEnd", () => {
-                console.log(`🔴 Live @${user} terminou`);
-            });
-
-        } catch (err) {
-            console.log("❌ Erro ao conectar:", err);
-        }
-    }
-}
-
-// ==============================
-// UPGRADE PARA WEBSOCKET
-// ==============================
-server.on("upgrade", (req, socket, head) => {
-    const { url } = req;
-
-    if (url === "/gift") {
-        wssGift.handleUpgrade(req, socket, head, (ws) => {
-            wssGift.emit("connection", ws, req);
-            console.log("🟣 Overlay GIFT conectado");
-        });
-    } else if (url === "/tap") {
-        wssTap.handleUpgrade(req, socket, head, (ws) => {
-            wssTap.emit("connection", ws, req);
-            console.log("💛 Overlay TAP conectado");
-        });
-    } else {
-        socket.destroy();
-    }
+  ws.on("close", () => console.log("🔴 Overlay desconectado"));
 });
 
-// ==============================
-// KEEP ALIVE PARA O RENDER NÃO FECHAR
-// ==============================
-setInterval(() => {
-    console.log("⏳ Mantendo servidor vivo...");
-}, 1000 * 20);
+// ===================== TIKTOK LIVE ======================
+const tiktok = new WebcastPushConnection(USER);
 
-// ==============================
-// INICIAR SERVIDOR
-// ==============================
+tiktok.connect()
+  .then(() => console.log("🟢 Conectado ao TikTok!"))
+  .catch(err => console.error("❌ Erro ao conectar TikTok:", err));
+
+// Evento de TAP
+tiktok.on("like", (data) => {
+  const payload = {
+    userId: data.userId,
+    nickname: data.nickname,
+    likes: data.likeCount,
+  };
+
+  // envia para todos overlays conectados
+  wss.clients.forEach((c) => {
+    if (c.readyState === WebSocket.OPEN) {
+      c.send(JSON.stringify(payload));
+    }
+  });
+});
+
+// ===================== INICIAR SERVIDOR ======================
 server.listen(PORT, () => {
-    console.log(`🚀 SERVIDOR ONLINE na porta ${PORT}`);
-    iniciarConexoes();
+  console.log("🚀 SERVIDOR ONLINE na porta", PORT);
 });
