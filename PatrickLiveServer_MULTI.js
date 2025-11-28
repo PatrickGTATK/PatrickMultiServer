@@ -1,8 +1,8 @@
 // =======================================================================
-//  SERVIDOR MULTI-USUÁRIO TIKTOK COMPLETO (COM PROTEÇÃO TOTAL DE FOTO)
-//  ✔ Foguete só reage a gift
-//  ✔ Tap, Follow, Join continuam funcionando
-//  ✔ Foto 100% garantida com cache + fallback
+//  SERVIDOR MULTI-USUÁRIO TIKTOK COMPLETO (AVANÇADO)
+//  ✔ Rate Limiter (Anti-Tap Spam)
+//  ✔ Registro de Troca de PFP
+//  ✔ Detecção de Overlay Congelado (Heartbeat)
 // =======================================================================
 
 import "dotenv/config";
@@ -11,6 +11,7 @@ import http from "http";
 import WebSocket, { WebSocketServer } from "ws";
 import WebcastPushConnection, { SignConfig } from "./tiktok-live-connector/index.js";
 import url from "url";
+import process from "process";
 
 // -----------------------------------------------------------------------
 // CONFIGURAÇÕES
@@ -21,6 +22,10 @@ const WS_SECRET = process.env.WS_SECRET;
 const USERS = process.env.USERS?.split(",").map(u => u.trim()).filter(u => u) || [];
 
 const PING_INTERVAL = 25000;
+const OVERLAY_HEARTBEAT_INTERVAL = 30000; // Intervalo para checagem de Heartbeat
+const MAX_TAP_RATE_MS = 25; // Limita Taps a 40/s (1000ms / 40 = 25ms)
+
+let lastTapTime = 0; // Variável global para o Rate Limiter
 
 const app = express();
 const server = http.createServer(app);
@@ -31,9 +36,10 @@ if (SignConfig && API_KEY) {
     console.log("🔑 API_KEY carregada.");
 }
 
-// WS SECRET
+// WS SECRET (Segurança Crítica)
 if (!WS_SECRET || WS_SECRET.length < 16) {
-    console.error("🚨 WS_SECRET muito curto! Defina um seguro!");
+    console.error("🚨 ERRO CRÍTICO: WS_SECRET ausente ou muito curto! Defina uma chave secreta com pelo menos 16 caracteres em suas variáveis de ambiente para segurança.");
+    process.exit(1); 
 } else {
     console.log("🔒 WS_SECRET OK.");
 }
@@ -53,8 +59,14 @@ function getSafePFP(data) {
         data.avatarThumb ||
         data.avatarMedium ||
         null;
+    
+    let oldUrl = pfpCache.get(data.uniqueId);
 
     if (url && typeof url === "string" && url.length > 5) {
+        // IMPLEMENTAÇÃO DA MELHORIA: Registrar troca de PFP
+        if (oldUrl && oldUrl !== url) {
+            console.log(`🔁 Nova PFP detectada para ${data.uniqueId} (${data.nickname})`);
+        }
         pfpCache.set(data.uniqueId, url);
         return url;
     }
@@ -67,25 +79,58 @@ function getSafePFP(data) {
 }
 
 // -----------------------------------------------------------------------
-// WEBSOCKET com Autenticação
+// WEBSOCKET com Autenticação e Heartbeat
 // -----------------------------------------------------------------------
 const wss = new WebSocketServer({ noServer: true });
+let nextOverlayId = 1;
 
 wss.on("connection", ws => {
-    console.log(`🟢 Overlay conectado (${wss.clients.size})`);
+    ws.id = nextOverlayId++; // ID Único para Debug
     ws.isAlive = true;
+    ws.overlayActive = true; // Novo: Indica se o overlay está respondendo
 
+    console.log(`🟢 Overlay conectado. ID: ${ws.id} (${wss.clients.size})`);
+
+    // Resposta ao ping padrão do WS
     ws.on("pong", () => ws.isAlive = true);
 
+    // Resposta ao nosso Heartbeat customizado para checar se o JS está rodando
+    ws.on("message", (message) => {
+        if (message.toString() === 'HB') {
+            ws.overlayActive = true;
+        }
+    });
+
+    // PING/PONG padrão do WS para checar a conexão de rede
     const pingTimer = setInterval(() => {
         if (ws.readyState !== WebSocket.OPEN) return;
-        if (!ws.isAlive) return ws.terminate();
+        if (!ws.isAlive) {
+            console.log(`⚠️ WS-PING: Overlay ID ${ws.id} não respondeu. Terminando.`);
+            return ws.terminate();
+        }
 
         ws.isAlive = false;
         ws.ping();
     }, PING_INTERVAL);
+    
+    // HEARTBEAT customizado para checar se o JS no overlay está congelado
+    const heartbeatTimer = setInterval(() => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        
+        if (!ws.overlayActive) {
+            console.log(`🚨 HB-CHECK: Overlay ID ${ws.id} congelado/inativo. Terminando.`);
+            return ws.terminate();
+        }
 
-    ws.on("close", () => clearInterval(pingTimer));
+        ws.overlayActive = false; // Define como inativo e envia mensagem
+        ws.send('CHK'); // Envia "Check", esperando resposta 'HB'
+    }, OVERLAY_HEARTBEAT_INTERVAL);
+
+    ws.on("close", () => {
+        console.log(`🔴 Overlay desconectado. ID: ${ws.id}`);
+        clearInterval(pingTimer);
+        clearInterval(heartbeatTimer);
+    });
 });
 
 // Envia evento a todos overlays conectados
@@ -132,7 +177,12 @@ function connectToTikTok(username) {
     tiktokConnections.set(username, tiktok);
 
     function reconnect(reason) {
+        // Loga o motivo e detalhes do erro
         console.warn(`⚠️ Reconnect [${username}] →`, reason);
+        if (reason && typeof reason === 'object' && reason.stack) {
+             console.error('Detalhes do Erro:', reason);
+        }
+
         tiktok.removeAllListeners();
         tiktok.disconnect();
         tiktokConnections.delete(username);
@@ -154,6 +204,14 @@ function connectToTikTok(username) {
 
     // TAP (likes)
     tiktok.on("like", data => {
+        const now = Date.now();
+        
+        // IMPLEMENTAÇÃO DA MELHORIA: RATE LIMITER
+        if (now - lastTapTime < MAX_TAP_RATE_MS) {
+            return; // Sai sem processar o evento (limite de 40/s)
+        }
+        lastTapTime = now;
+
         broadcast({
             streamer: username,
             type: "tap",
