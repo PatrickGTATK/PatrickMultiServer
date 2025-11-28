@@ -1,7 +1,8 @@
 // =======================================================================
-//  SERVIDOR MULTI-USUÁRIO TIKTOK COMPLETO (100% SEGURO)
+//  SERVIDOR MULTI-USUÁRIO TIKTOK COMPLETO (COM PROTEÇÃO TOTAL DE FOTO)
 //  ✔ Foguete só reage a gift
-//  ✔ Outros overlays continuam funcionando normalmente
+//  ✔ Tap, Follow, Join continuam funcionando
+//  ✔ Foto 100% garantida com cache + fallback
 // =======================================================================
 
 import "dotenv/config";
@@ -24,11 +25,13 @@ const PING_INTERVAL = 25000;
 const app = express();
 const server = http.createServer(app);
 
+// API KEY
 if (SignConfig && API_KEY) {
     SignConfig.apiKey = API_KEY;
     console.log("🔑 API_KEY carregada.");
 }
 
+// WS SECRET
 if (!WS_SECRET || WS_SECRET.length < 16) {
     console.error("🚨 WS_SECRET muito curto! Defina um seguro!");
 } else {
@@ -36,6 +39,32 @@ if (!WS_SECRET || WS_SECRET.length < 16) {
 }
 
 const tiktokConnections = new Map();
+
+// ===========================================================
+// SISTEMA DE PFP 100% SEGURO
+// ===========================================================
+const pfpCache = new Map();
+
+function getSafePFP(data) {
+    let url =
+        data.profilePictureUrl ||
+        data.profilePicture?.url ||
+        data.profilePicture?.thumb ||
+        data.avatarThumb ||
+        data.avatarMedium ||
+        null;
+
+    if (url && typeof url === "string" && url.length > 5) {
+        pfpCache.set(data.uniqueId, url);
+        return url;
+    }
+
+    if (pfpCache.has(data.uniqueId)) {
+        return pfpCache.get(data.uniqueId);
+    }
+
+    return "https://i.imgur.com/3yaf2ZQ.png"; // fallback seguro
+}
 
 // -----------------------------------------------------------------------
 // WEBSOCKET com Autenticação
@@ -120,10 +149,10 @@ function connectToTikTok(username) {
     tiktok.on("disconnected", () => reconnect("server closed"));
 
     // ===========================================================
-    // EVENTOS CORRETOS
+    // EVENTOS
     // ===========================================================
 
-    // TAP (likes) — NÃO dispara foguete
+    // TAP (likes)
     tiktok.on("like", data => {
         broadcast({
             streamer: username,
@@ -131,22 +160,22 @@ function connectToTikTok(username) {
             user: data.uniqueId,
             nickname: data.nickname,
             likes: data.likeCount,
-            pfp: data.profilePictureUrl
+            pfp: getSafePFP(data)
         });
     });
 
-    // FOLLOW — NÃO dispara foguete
+    // FOLLOW
     tiktok.on("follow", data => {
         broadcast({
             streamer: username,
             type: "follow",
             user: data.uniqueId,
             nickname: data.nickname,
-            pfp: data.profilePictureUrl
+            pfp: getSafePFP(data)
         });
     });
 
-    // GIFT — dispara o foguete
+    // GIFT (dispara foguete)
     tiktok.on("gift", data => {
         broadcast({
             streamer: username,
@@ -155,18 +184,18 @@ function connectToTikTok(username) {
             nickname: data.nickname,
             giftName: data.giftName,
             repeatEnd: data.repeatEnd,
-            pfp: data.profilePictureUrl
+            pfp: getSafePFP(data)
         });
     });
 
-    // JOIN — NÃO dispara foguete
+    // JOIN
     tiktok.on("member", data => {
         broadcast({
             streamer: username,
             type: "join",
             user: data.uniqueId,
             nickname: data.nickname,
-            pfp: data.profilePictureUrl
+            pfp: getSafePFP(data)
         });
     });
 }
@@ -186,17 +215,36 @@ if (USERS.length > 0) {
 const TEST_PFP = "https://i.imgur.com/0Z8FQmT.png";
 
 app.get("/test-tap", (req, res) => {
-    broadcast({ streamer: "tester", type: "tap", user: "AAA", nickname: "TapTester", likes: 1, pfp: TEST_PFP });
+    broadcast({
+        streamer: "tester",
+        type: "tap",
+        user: "AAA",
+        nickname: "TapTester",
+        likes: 1,
+        pfp: TEST_PFP
+    });
     res.send("✔ TAP enviado.");
 });
 
 app.get("/test-follow", (req, res) => {
-    broadcast({ streamer: "tester", type: "follow", user: "BBB", nickname: "FollowTester", pfp: TEST_PFP });
+    broadcast({
+        streamer: "tester",
+        type: "follow",
+        user: "BBB",
+        nickname: "FollowTester",
+        pfp: TEST_PFP
+    });
     res.send("✔ FOLLOW enviado.");
 });
 
 app.get("/test-join", (req, res) => {
-    broadcast({ streamer: "tester", type: "join", user: "CCC", nickname: "JoinTester", pfp: TEST_PFP });
+    broadcast({
+        streamer: "tester",
+        type: "join",
+        user: "CCC",
+        nickname: "JoinTester",
+        pfp: TEST_PFP
+    });
     res.send("✔ JOIN enviado.");
 });
 
