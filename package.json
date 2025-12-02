@@ -1,14 +1,12 @@
 {
-  "name": "patrick-multi-server",
-  "version": "1.0.0",
-  "main": "PatrickLiveServer_MULTI.js",
   "type": "module",
-  "scripts": {
-    "start": "node PatrickLiveServer_MULTI.js"
-  },
   "dependencies": {
-    "dotenv": "^16.3.1",
-    "express": "^4.19.2",
-    "ws": "^8.17.0"
+    "express": "^4",
+    "ws": "^8",
+    "dotenv": "^16",
+    "winston": "^3"
+  },
+  "scripts": {
+    "start": "node PatrickServer_PRO.js"
   }
 }
